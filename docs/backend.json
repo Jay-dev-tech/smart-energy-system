@@ -1,0 +1,216 @@
+
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a registered user of the Solaris application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        },
+        "registrationDate": {
+          "type": "string",
+          "description": "Date and time when the user registered.",
+          "format": "date-time"
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "Unique API key for device authentication (e.g., ESP32)."
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "registrationDate"
+      ]
+    },
+    "EnergyData": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "EnergyData",
+      "type": "object",
+      "description": "Represents real-time energy data collected from the ESP32.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the EnergyData entry."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the energy data was recorded.",
+          "format": "date-time"
+        },
+        "voltage": {
+          "type": "number",
+          "description": "Voltage reading from the ESP32."
+        },
+        "current": {
+          "type": "number",
+          "description": "Current reading from the ESP32."
+        },
+        "batteryLevel": {
+          "type": "number",
+          "description": "Battery level percentage."
+        },
+        "powerConsumption": {
+          "type": "number",
+          "description": "Power consumption reading."
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "voltage",
+        "current",
+        "batteryLevel",
+        "powerConsumption"
+      ]
+    },
+    "Prediction": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Prediction",
+      "type": "object",
+      "description": "Represents energy consumption predictions made by the Firebase ML model.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Prediction entry."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the prediction was generated.",
+          "format": "date-time"
+        },
+        "predictedConsumption": {
+          "type": "number",
+          "description": "Predicted energy consumption value."
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "predictedConsumption"
+      ]
+    },
+    "SwitchState": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SwitchState",
+      "type": "object",
+      "description": "Represents the state of a controllable switch.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the switch (e.g. 'Living Room Lights')."
+        },
+        "state": {
+          "type": "boolean",
+          "description": "Current state of the switch (true for on, false for off)."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the switch state was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "name",
+        "state",
+        "timestamp"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profile information. The userId parameter represents the unique Firebase Auth ID of the user.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth ID of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/energyData/{energyDataId}",
+        "definition": {
+          "entityName": "EnergyData",
+          "schema": {
+            "$ref": "#/backend/entities/EnergyData"
+          },
+          "description": "Stores real-time energy data collected from the ESP32. The userId parameter represents the unique Firebase Auth ID of the user, and the energyDataId is the unique ID for each energy data entry.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth ID of the user."
+            },
+            {
+              "name": "energyDataId",
+              "description": "The unique ID for each energy data entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/predictions/{predictionId}",
+        "definition": {
+          "entityName": "Prediction",
+          "schema": {
+            "$ref": "#/backend/entities/Prediction"
+          },
+          "description": "Stores energy consumption predictions made by the Firebase ML model. The userId parameter represents the unique Firebase Auth ID of the user, and the predictionId is the unique ID for each prediction entry.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth ID of the user."
+            },
+            {
+              "name": "predictionId",
+              "description": "The unique ID for each prediction entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/switchStates/{switchId}",
+        "definition": {
+          "entityName": "SwitchState",
+          "schema": {
+            "$ref": "#/backend/entities/SwitchState"
+          },
+          "description": "Stores the state of controllable switches. The userId parameter represents the unique Firebase Auth ID of the user, and the switchId is the unique ID for each switch (e.g., 'switch1').",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique Firebase Auth ID of the user."
+            },
+            {
+              "name": "switchId",
+              "description": "The unique ID for each switch."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "This Firestore structure is designed to support the Solaris application's features, including real-time energy monitoring, predictive analytics, smart switch control, and historical data visualization. The design prioritizes security, scalability, and debuggability, adhering to the core principles of Authorization Independence, Clarity of Intent, DBAC (Database-Based Access Control), and QAPs (Rules are not Filters).\n\n**Authorization Independence:**\n*   User-specific data is stored under `/users/{userId}`, providing inherent ownership. No `get()` calls are needed to verify ownership.\n*   For EnergyData, Prediction, and SwitchState, data is stored under the user's document (`/users/{userId}/energyData/{energyDataId}`, `/users/{userId}/predictions/{predictionId}`, `/users/{userId}/switchStates/{switchStateId}`). This denormalizes the ownership, ensuring rules don't need to traverse the document hierarchy to authorize requests.\n\n**Clarity of Intent:**\n*   The path structure clearly indicates the relationships between users and their associated data (energy data, predictions, and switch states).\n*   Explicit field names (e.g., `timestamp`, `state`) enhance readability and understanding.\n\n**DBAC (Database-Based Access Control):**\n*   The application relies on Firebase Authentication (`request.auth.uid`) to identify users. Access control is based on the user's ID and ownership of data within their designated path.\n*   No custom claims are used; roles are not applicable in this data structure since the user inherently owns their data.\n\n**QAPs (Rules are not Filters):**\n*   The structure ensures that list operations are secure by restricting access to user-specific data under `/users/{userId}`. A user can only list data they own, preventing unauthorized access to other users' information.\n\n**Invariants:**\n*   Timestamps are included in EnergyData and SwitchState to maintain data integrity and enable time-based queries and analysis.\n*   Ownership is enforced by the path structure, ensuring that users can only access and modify their own data.\n\nThe structure supports the application's core features as follows:\n\n*   **Real-time Energy Monitoring:** The `/users/{userId}/energyData/{energyDataId}` collection stores real-time data from the ESP32.\n*   **Predictive Analytics:** The `/users/{userId}/predictions/{predictionId}` collection stores energy consumption predictions made by the Firebase ML model.\n*   **Smart Switch Control:** The `/users/{userId}/switchStates/{switchStateId}` collection stores the state of controllable switches.\n*   **Historical Data Visualization:** Data stored in `/users/{userId}/energyData/{energyDataId}` can be used for generating interactive graphs and charts.\n*   **User Preference Settings:** User preferences (if implemented) could be stored in the `/users/{userId}` document or a subcollection, with appropriate security rules applied.\n*   **Firebase ML Integration:** The application can write model outputs to the `/users/{userId}/predictions/{predictionId}` collection.\n*   **Data Ingestion and Storage:** The application collects and stores data from ESP32 into Firestore under the `/users/{userId}/energyData/{energyDataId}` collection."
+  }
+}

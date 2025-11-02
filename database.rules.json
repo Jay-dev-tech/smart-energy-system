@@ -1,0 +1,22 @@
+
+{
+  "rules": {
+    "app": {
+      // The API key can be read and written by any authenticated user.
+      "apiKey": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      // Authenticated users (including anonymous) can control the switches.
+      "switchStates": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      // Energy data can be read by authenticated users, but only written by the server (via secret).
+      "energyData": {
+        ".read": "auth != null",
+        ".write": false
+      }
+    }
+  }
+}

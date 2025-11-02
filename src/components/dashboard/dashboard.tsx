@@ -1,0 +1,259 @@
+
+"use client";
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useToast } from '../../hooks/use-toast';
+import { runEnergyPrediction, runIntelligentSwitchControl, updateSwitchState, getSwitchStates } from '../../app/actions';
+import { INITIAL_ENERGY_DATA, INITIAL_SWITCHES } from '../../lib/data';
+import type { EnergyData, SwitchState } from '../../lib/types';
+import { EnergyMetrics } from './energy-metrics';
+import { SwitchControl } from './switch-control';
+import { UsageHistory } from './usage-history';
+import { PredictionAnalytics } from './prediction-analytics';
+import type { PredictEnergyConsumptionOutput } from '../../ai/flows/predict-energy-consumption';
+import { useDatabase, useMemoFirebase } from '../../firebase';
+import { onValue, ref } from 'firebase/database';
+
+export function Dashboard() {
+  const [energyData, setEnergyData] = useState<EnergyData>(INITIAL_ENERGY_DATA);
+  const [switches, setSwitches] = useState<SwitchState[]>(INITIAL_SWITCHES);
+  const [userPreferences, setUserPreferences] = useState('Prioritize extending battery life and reducing cost. Only turn on essential appliances if battery is below 40%.');
+  const [prediction, setPrediction] = useState<PredictEnergyConsumptionOutput | null>(null);
+  const [isPredictionLoading, setIsPredictionLoading] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [aiReasoning, setAiReasoning] = useState('');
+  const { toast } = useToast();
+  const database = useDatabase();
+
+  // Ref to prevent multiple optimizations for the same low-battery event
+  const lowBatteryOptimizationTriggered = useRef(false);
+
+  const handlePrediction = useCallback(async () => {
+    setIsPredictionLoading(true);
+    setAiReasoning('');
+    const result = await runEnergyPrediction();
+    if (result.success && result.data) {
+      setPrediction(result.data);
+      toast({
+        title: "Prediction Ready",
+        description: "Future energy consumption has been forecasted.",
+      });
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Prediction Failed",
+        description: result.error,
+      });
+    }
+    setIsPredictionLoading(false);
+  }, [toast]);
+
+  const updateAllSwitches = useCallback(async (newSwitchDbStates: boolean[]) => {
+    // The UI state should be the inverse of the database state.
+    const updatedSwitches = switches.map((s, i) => ({
+      ...s,
+      // UI state is ON if DB state is false
+      state: !newSwitchDbStates[i], 
+    }));
+
+    // Optimistically update UI
+    setSwitches(updatedSwitches);
+
+    // Call server action for each switch. The server action will handle the inversion.
+    for (const s of updatedSwitches) {
+      // no need to await, fire and forget
+      updateSwitchState(s.id, s.name, s.state);
+    }
+  }, [switches]);
+
+  const handleOptimization = useCallback(async (isAutomatic: boolean = false) => {
+    if (!prediction) {
+      // Run prediction if it's not available yet
+      await handlePrediction();
+    }
+    // Use a function to get the latest prediction state
+    setPrediction(latestPrediction => {
+      if (!latestPrediction) {
+        toast({
+          variant: "destructive",
+          title: "Cannot Optimize",
+          description: "Prediction data is not available. Please try again.",
+        });
+        return latestPrediction;
+      }
+      
+      setIsOptimizing(true);
+      runIntelligentSwitchControl({
+        ...energyData,
+        powerConsumption: energyData.power,
+        predictedUsage: latestPrediction.predictedConsumption,
+        userPreferences,
+        userUsagePatterns: latestPrediction.userUsagePatterns,
+      }).then(result => {
+        if (result.success && result.data) {
+          const { switch1State, switch2State, switch3State, switch4State, switch5State, reasoning } = result.data;
+          // The AI returns the database state (false=ON, true=OFF)
+          const newSwitchDbStates = [switch1State, switch2State, switch3State, switch4State, switch5State];
+          
+          updateAllSwitches(newSwitchDbStates);
+          
+          setAiReasoning(reasoning);
+          toast({
+            title: isAutomatic ? "Low Battery Action" : "Optimization Complete",
+            description: isAutomatic ? "AI has adjusted switches to conserve power." : "Switches have been adjusted intelligently.",
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Optimization Failed",
+            description: result.error,
+          });
+        }
+        setIsOptimizing(false);
+      });
+      
+      return latestPrediction;
+    });
+
+  }, [prediction, energyData, userPreferences, handlePrediction, toast, updateAllSwitches]);
+
+  useEffect(() => {
+    handlePrediction(); // Initial prediction on load
+
+    const initialFetch = async () => {
+      const result = await getSwitchStates();
+      if (result.success && result.data) {
+        const dbSwitches = Object.entries(result.data).map(([id, s]: [string, any]) => ({
+          id: parseInt(id, 10),
+          name: s.name,
+          // DB state (false=ON, true=OFF) is inverted for UI state (true=ON, false=OFF)
+          state: !s.state,
+        }));
+        // sync with initial switches
+        const syncedSwitches = INITIAL_SWITCHES.map(is => {
+            const dbSwitch = dbSwitches.find(dbs => dbs.id === is.id);
+            return dbSwitch ? dbSwitch : is;
+        });
+
+        setSwitches(syncedSwitches);
+      }
+    };
+    initialFetch();
+
+  }, [handlePrediction]);
+
+  const energyDataRef = useMemoFirebase(() => database ? ref(database, 'app/energyData') : null, [database]);
+  const switchStatesRef = useMemoFirebase(() => database ? ref(database, 'app/switchStates') : null, [database]);
+
+  useEffect(() => {
+    if (!energyDataRef) return;
+    const unsubscribe = onValue(energyDataRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        // Get the latest entry
+        const latestKey = Object.keys(data).sort().pop();
+        if (latestKey) {
+            const latestData = data[latestKey];
+             setEnergyData(prev => {
+                const newBatteryLevel = latestData.batteryLevel ?? prev.batteryLevel;
+                const newEnergyData = {
+                    ...prev, // keep fields not sent by device
+                    voltage: latestData.voltage ?? prev.voltage,
+                    current: latestData.current ?? prev.current,
+                    batteryLevel: newBatteryLevel,
+                    power: (latestData.voltage && latestData.current) ? latestData.voltage * latestData.current : prev.power,
+                    temperature: latestData.temperature ?? prev.temperature,
+                    humidity: latestData.humidity ?? prev.humidity,
+                };
+
+                // Automatic low-battery optimization logic
+                if (newBatteryLevel < 40 && !lowBatteryOptimizationTriggered.current) {
+                    lowBatteryOptimizationTriggered.current = true; // Set flag to prevent re-triggering
+                    handleOptimization(true); // isAutomatic = true
+                } else if (newBatteryLevel >= 40) {
+                    lowBatteryOptimizationTriggered.current = false; // Reset flag when battery is healthy
+                }
+                
+                return newEnergyData;
+             });
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [energyDataRef, handleOptimization]);
+
+   useEffect(() => {
+    if (!switchStatesRef) return;
+    const unsubscribe = onValue(switchStatesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setSwitches(prevSwitches => {
+          const updatedSwitches = [...prevSwitches];
+          let hasChanged = false;
+          Object.entries(data).forEach(([id, s]: [string, any]) => {
+            const switchId = parseInt(id, 10);
+            const switchIndex = updatedSwitches.findIndex(sw => sw.id === switchId);
+            // Invert db state for UI. UI ON (true) is DB OFF(true). This is wrong.
+            // UI state should be `!s.state`. If DB is false (ON), UI should be true (ON).
+            const newUiState = !s.state; 
+
+            if (switchIndex !== -1 && updatedSwitches[switchIndex].state !== newUiState) {
+              updatedSwitches[switchIndex] = { ...updatedSwitches[switchIndex], name: s.name, state: newUiState };
+              hasChanged = true;
+            }
+          });
+          return hasChanged ? updatedSwitches : prevSwitches;
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, [switchStatesRef]);
+
+  const handleSwitchChange = async (id: number, checked: boolean) => {
+    const targetSwitch = switches.find(s => s.id === id);
+    if (!targetSwitch) return;
+
+    // Optimistic UI update
+    setSwitches(prev => prev.map(s => s.id === id ? { ...s, state: checked } : s));
+    setAiReasoning('');
+
+    // `checked` is the UI state (true for ON). The action will invert it for the DB.
+    const result = await updateSwitchState(id, targetSwitch.name, checked);
+    if (!result.success) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: result.error,
+      });
+      // Revert UI on failure
+      setSwitches(prev => prev.map(s => s.id === id ? { ...s, state: !checked } : s));
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <div className="lg:col-span-8 xl:col-span-9 space-y-6">
+        <EnergyMetrics energyData={energyData} />
+        <SwitchControl
+          switches={switches}
+          userPreferences={userPreferences}
+          aiReasoning={aiReasoning}
+          isOptimizing={isOptimizing}
+          isPredictionAvailable={!!prediction}
+          onSwitchChange={handleSwitchChange}
+          onPreferencesChange={setUserPreferences}
+          onOptimize={() => handleOptimization(false)}
+        />
+      </div>
+
+      <div className="lg:col-span-4 xl:col-span-3 space-y-6">
+         <PredictionAnalytics
+          prediction={prediction}
+          isLoading={isPredictionLoading}
+          onPredict={handlePrediction}
+        />
+        <UsageHistory />
+      </div>
+    </div>
+  );
+}
