@@ -34,7 +34,7 @@ export default function SettingsPage() {
       setIsLoading(true);
       try {
         const result = await generateApiKey();
-        if(result.success) {
+        if(result.success && result.data) {
           setDeviceApiKey(result.data.apiKey);
         } else {
             toast({
