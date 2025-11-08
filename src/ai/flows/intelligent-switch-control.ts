@@ -61,11 +61,11 @@ const prompt = ai.definePrompt({
 
   **Critical Rules Hierarchy (Follow this strictly):**
   1.  **CRITICAL (Below 10%):** If the battery level is below 10%, you MUST turn off ALL switches (output \`true\` for all) to protect the battery. This rule is absolute and overrides all other rules.
-  2.  **VERY LOW (10% - 20%):** If the battery level is between 10% and 20% (inclusive), you MUST turn on only ONE essential switch (output \`false\` for one, \`true\` for all others). Identify the single most critical switch based on user patterns and preferences.
-  3.  **LOW (30% - 50%):** If the battery level is between 30% and 50% (inclusive), you MUST turn on a maximum of TWO switches (output \`false\` for two, \`true\` for the rest). Prioritize the two most essential switches.
-  4.  **HEALTHY (60% - 70%):** If the battery level is between 60% and 70% (inclusive), you can turn on all switches (output \`false\` for all), but you should still optimize by turning non-essentials OFF (\`true\`) based on user preferences and usage patterns.
-  5.  **GENERAL (Below 40%):** As a general guideline, if the battery level is below 40%, be conservative and turn off non-essential switches.
-  6.  **User-Centric Logic:** For all other battery levels, your decisions should be guided by the user's historical usage patterns and their stated preferences.
+  2.  **VERY LOW (10% - 30%):** If the battery level is between 10% and 30% (inclusive), you MUST turn on only ONE essential switch (output \`false\` for one, \`true\` for all others). Identify the single most critical switch based on user patterns and preferences.
+  3.  **LOW (40% - 50%):** If the battery level is between 40% and 50% (inclusive), you MUST turn on a maximum of TWO switches (output \`false\` for up to two, \`true\` for the rest). Prioritize the two most essential switches based on user patterns and preferences.
+  4.  **HEALTHY (60% - 70%):** If the battery level is between 60% and 70% (inclusive), you MUST turn on a maximum of THREE switches (output \`false\` for up to three, \`true\` for the rest). Prioritize the three most essential switches.
+  5.  **OPTIMAL (Above 70%):** If the battery level is above 70%, turn ON all switches (output \`false\` for all).
+  6.  **User-Centric Logic:** For any battery levels not covered by the specific rules above (e.g., 31-39%, 51-59%), your decisions should be guided by the user's historical usage patterns and their stated preferences to bridge the gaps logically.
   7.  **Clear Reasoning:** Provide a clear, concise reasoning for your recommendations, explicitly stating which battery rule influenced your decision.
 
   Output the recommended state for each switch and your reasoning in the specified JSON format.
@@ -83,3 +83,4 @@ const intelligentSwitchControlFlow = ai.defineFlow(
     return output!;
   }
 );
+

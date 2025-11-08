@@ -136,7 +136,7 @@ export async function updateSwitchState(switchId: number, name: string, state: b
     }
 
     return { success: true };
-  } catch (error: any) {.
+  } catch (error: any) {
     console.error(`Error updating switch ${switchId}:`, error);
     return { success: false, error: error.message || `Failed to update switch ${switchId}.` };
   }
