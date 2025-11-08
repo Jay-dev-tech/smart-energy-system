@@ -157,19 +157,37 @@ export async function getSwitchStates() {
 
 export async function simulateBatteryLevel(level: number) {
   try {
-    const energyDataRef = ref(database, 'app/energyData');
-    const newEntryRef = push(energyDataRef); // Create a new entry with a unique key
+    const databaseUrl = firebaseConfig.databaseURL;
+    const secret = process.env.FIREBASE_DATABASE_SECRET;
+    if (!secret) {
+      throw new Error('Server configuration error: Missing database secret.');
+    }
+
+    // A new entry will be created with a unique key under 'app/energyData'
+    const path = `app/energyData.json?auth=${secret}`;
+    const url = `${databaseUrl}/${path}`;
     
-    // Set the data for the new entry, including a server-side timestamp
-    await set(newEntryRef, {
+    const dataToPost = {
       batteryLevel: level,
-      timestamp: serverTimestamp(),
+      timestamp: { ".sv": "timestamp" }, // Firebase Server Value for timestamp
+      // Include other fields with default values so the dashboard doesn't crash
       voltage: 230,
-      current: 0, // Default values for simulation
+      current: 0,
       power: 0,
       temperature: 25,
       humidity: 60,
+    };
+
+    const response = await fetch(url, {
+      method: 'POST', // POST creates a new entry with a unique ID
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dataToPost),
     });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to simulate battery level.');
+    }
 
     return { success: true };
   } catch (error: any) {
