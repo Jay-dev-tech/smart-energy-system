@@ -52,21 +52,8 @@ export async function generateApiKey() {
       throw new Error('Server configuration error: Missing database secret.');
     }
     const databaseUrl = firebaseConfig.databaseURL;
-    const readPath = `app/apiKey.json?auth=${secret}`;
-    const readUrl = `${databaseUrl}/${readPath}`;
-
-    // First, try to fetch the existing key
-    const readResponse = await fetch(readUrl);
     
-    // The key might not exist, which can return a 404 or a null body, which is OK.
-    if (readResponse.ok) {
-        const existingKey = await readResponse.json();
-        if (existingKey) {
-            return { success: true, data: { apiKey: existingKey } };
-        }
-    }
-
-    // If no key exists, generate and write a new one
+    // Generate and write a new key
     const newApiKey = randomUUID();
     const writePath = `app/apiKey.json?auth=${secret}`;
     const writeUrl = `${databaseUrl}/${writePath}`;
@@ -91,13 +78,28 @@ export async function generateApiKey() {
 
 export async function getApiKey() {
    try {
-    const dbRef = ref(database);
-    const snapshot = await get(child(dbRef, 'app/apiKey'));
-    const apiKey = snapshot.exists() ? snapshot.val() : null;
-    return { success: true, data: { apiKey } };
+    const secret = process.env.FIREBASE_DATABASE_SECRET;
+    if (!secret) {
+      throw new Error('Server configuration error: Missing database secret.');
+    }
+    const databaseUrl = firebaseConfig.databaseURL;
+    const readPath = `app/apiKey.json?auth=${secret}`;
+    const readUrl = `${databaseUrl}/${readPath}`;
+    
+    const readResponse = await fetch(readUrl);
+    
+    if (readResponse.ok) {
+        const existingKey = await readResponse.json();
+        if (existingKey) {
+            return { success: true, data: { apiKey: existingKey } };
+        }
+    }
+    // If not found or error, try to generate a new one
+    return generateApiKey();
+
   } catch (error: any) {
-    console.error('Error fetching API key:', error);
-    return { success: false, error: 'Could not fetch API key. Check database rules and connectivity.' };
+    console.error('Error fetching/generating API key:', error);
+    return { success: false, error: 'Could not fetch or generate API key. Check database rules and connectivity.' };
   }
 }
 
@@ -163,23 +165,23 @@ export async function simulateBatteryLevel(level: number) {
       throw new Error('Server configuration error: Missing database secret.');
     }
 
-    // A new entry will be created with a unique key under 'app/energyData'
     const path = `app/energyData.json?auth=${secret}`;
     const url = `${databaseUrl}/${path}`;
     
     const dataToPost = {
       batteryLevel: level,
-      timestamp: serverTimestamp(), // Firebase Server Value for timestamp
-      // Include other fields with default values so the dashboard doesn't crash
+      timestamp: serverTimestamp(),
       voltage: 230,
       current: 0,
       power: 0,
       temperature: 25,
       humidity: 60,
+      totalConsumption: 1234.5,
+      energyRemain: 45.2,
     };
 
     const response = await fetch(url, {
-      method: 'POST', // POST creates a new entry with a unique ID
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(dataToPost),
     });

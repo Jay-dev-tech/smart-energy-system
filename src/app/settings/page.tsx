@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useTheme } from "next-themes"
 import { firebaseConfig } from '../../firebase/config';
-import { generateApiKey } from '../actions';
+import { getApiKey } from '../actions';
 import { Header } from '../../components/header';
 import { SidebarProvider, Sidebar, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '../../components/ui/sidebar';
 import { LineChart, History, Settings, Wifi, Loader2, Moon, Sun, KeyRound, Copy, Check, Info, BeakerIcon } from 'lucide-react';
@@ -22,7 +22,6 @@ export default function SettingsPage() {
   const { setTheme } = useTheme()
   const [deviceApiKey, setDeviceApiKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
   const [manualBatteryInput, setManualBatteryInput] = useState('');
   const [hasCopiedDeviceKey, setHasCopiedDeviceKey] = useState(false);
@@ -33,7 +32,7 @@ export default function SettingsPage() {
     async function fetchKey() {
       setIsLoading(true);
       try {
-        const result = await generateApiKey();
+        const result = await getApiKey();
         if(result.success && result.data) {
           setDeviceApiKey(result.data.apiKey);
         } else {
