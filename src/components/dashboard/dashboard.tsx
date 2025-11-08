@@ -25,8 +25,11 @@ export function Dashboard() {
   const { toast } = useToast();
   const database = useDatabase();
 
-  // Ref to prevent multiple optimizations for the same low-battery event
-  const lowBatteryOptimizationTriggered = useRef(false);
+  const previousBatteryLevel = useRef<number | null>(null);
+
+  useEffect(() => {
+    previousBatteryLevel.current = energyData.batteryLevel;
+  }, [energyData.batteryLevel]);
 
   const handlePrediction = useCallback(async () => {
     setIsPredictionLoading(true);
@@ -49,31 +52,23 @@ export function Dashboard() {
   }, [toast]);
 
   const updateAllSwitches = useCallback(async (newSwitchDbStates: boolean[]) => {
-    // The AI returns the database state (false=ON, true=OFF).
-    // The UI state should be the inverse of the database state.
     const updatedSwitches = switches.map((s, i) => ({
       ...s,
-      // UI state is ON (true) if DB state is false
       state: !newSwitchDbStates[i], 
     }));
 
-    // Optimistically update UI
     setSwitches(updatedSwitches);
 
-    // Call server action for each switch. The server action will handle the inversion.
-    // We send the UI state to the action.
     for (const s of updatedSwitches) {
-      // no need to await, fire and forget
       updateSwitchState(s.id, s.name, s.state);
     }
   }, [switches]);
 
-  const handleOptimization = useCallback(async (isAutomatic: boolean = false) => {
+  const handleOptimization = useCallback(async (dataForOptimization: EnergyData, isAutomatic: boolean = false) => {
     if (!prediction) {
-      // Run prediction if it's not available yet
       await handlePrediction();
     }
-    // Use a function to get the latest prediction state
+    
     setPrediction(latestPrediction => {
       if (!latestPrediction) {
         toast({
@@ -81,20 +76,22 @@ export function Dashboard() {
           title: "Cannot Optimize",
           description: "Prediction data is not available. Please try again.",
         });
+        setIsOptimizing(false);
         return latestPrediction;
       }
       
       setIsOptimizing(true);
       runIntelligentSwitchControl({
-        ...energyData,
-        powerConsumption: energyData.power,
+        voltage: dataForOptimization.voltage,
+        current: dataForOptimization.current,
+        batteryLevel: dataForOptimization.batteryLevel,
+        powerConsumption: dataForOptimization.power,
         predictedUsage: latestPrediction.predictedConsumption,
         userPreferences,
         userUsagePatterns: latestPrediction.userUsagePatterns,
       }).then(result => {
         if (result.success && result.data) {
           const { switch1State, switch2State, switch3State, switch4State, switch5State, reasoning } = result.data;
-          // The AI returns the database state (false=ON, true=OFF)
           const newSwitchDbStates = [switch1State, switch2State, switch3State, switch4State, switch5State];
           
           updateAllSwitches(newSwitchDbStates);
@@ -117,13 +114,12 @@ export function Dashboard() {
       return latestPrediction;
     });
 
-  }, [prediction, energyData, userPreferences, handlePrediction, toast, updateAllSwitches]);
+  }, [prediction, userPreferences, handlePrediction, toast, updateAllSwitches]);
 
   useEffect(() => {
     handlePrediction(); // Initial prediction on load
   }, [handlePrediction]);
 
-  // This query now explicitly asks for the single latest entry based on the timestamp.
   const energyDataQuery = useMemoFirebase(() => database ? query(ref(database, 'app/energyData'), orderByChild('timestamp'), limitToLast(1)) : null, [database]);
   const switchStatesRef = useMemoFirebase(() => database ? ref(database, 'app/switchStates') : null, [database]);
 
@@ -132,50 +128,28 @@ export function Dashboard() {
     const unsubscribe = onValue(energyDataQuery, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Get the single latest entry from the query result
         const latestKey = Object.keys(data)[0];
         if (latestKey) {
             const latestData = data[latestKey];
-             setEnergyData(prev => {
-                const newBatteryLevel = latestData.batteryLevel ?? prev.batteryLevel;
-                
-                // --- Automatic low-battery optimization logic ---
-                // This logic needs to run *before* the state update to have access to the *previous* state
-                // to avoid re-triggering.
-                const hasJustDropped = newBatteryLevel < 40 && prev.batteryLevel >= 40;
+            const newBatteryLevel = latestData.batteryLevel;
+            const prevBatteryLevel = previousBatteryLevel.current;
 
-                if (hasJustDropped && !lowBatteryOptimizationTriggered.current) {
-                    lowBatteryOptimizationTriggered.current = true; // Set flag
-                    // We must pass the new data directly to the optimization function
-                    const currentEnergyData = {
-                        ...prev,
-                        ...latestData,
-                        power: (latestData.voltage && latestData.current) ? latestData.voltage * latestData.current : prev.power,
-                    };
-                    // Use a temporary object for the optimization call, as state updates are async
-                    const optimizationInput = {
-                      voltage: currentEnergyData.voltage,
-                      current: currentEnergyData.current,
-                      batteryLevel: newBatteryLevel, // use the direct new value
-                      powerConsumption: currentEnergyData.power,
-                      // ... rest of the properties for handleOptimization
-                    };
-                    handleOptimization(true);
-                } else if (newBatteryLevel >= 40) {
-                    lowBatteryOptimizationTriggered.current = false; // Reset flag
-                }
-                
-                // Return the new state for the UI
-                return {
-                    ...prev, // keep fields not sent by device
-                    voltage: latestData.voltage ?? prev.voltage,
-                    current: latestData.current ?? prev.current,
-                    batteryLevel: newBatteryLevel,
-                    power: (latestData.voltage && latestData.current) ? latestData.voltage * latestData.current : prev.power,
-                    temperature: latestData.temperature ?? prev.temperature,
-                    humidity: latestData.humidity ?? prev.humidity,
-                };
-             });
+            const newEnergyData: EnergyData = {
+                voltage: latestData.voltage ?? INITIAL_ENERGY_DATA.voltage,
+                current: latestData.current ?? INITIAL_ENERGY_DATA.current,
+                batteryLevel: latestData.batteryLevel ?? INITIAL_ENERGY_DATA.batteryLevel,
+                power: (latestData.voltage && latestData.current) ? latestData.voltage * latestData.current : INITIAL_ENERGY_DATA.power,
+                temperature: latestData.temperature ?? INITIAL_ENERGY_DATA.temperature,
+                humidity: latestData.humidity ?? INITIAL_ENERGY_DATA.humidity,
+                totalConsumption: latestData.totalConsumption ?? INITIAL_ENERGY_DATA.totalConsumption,
+                energyRemain: latestData.energyRemain ?? INITIAL_ENERGY_DATA.energyRemain,
+            };
+
+            setEnergyData(newEnergyData);
+            
+            if (prevBatteryLevel !== null && newBatteryLevel < 40 && prevBatteryLevel >= 40) {
+                handleOptimization(newEnergyData, true);
+            }
         }
       }
     });
@@ -195,22 +169,18 @@ export function Dashboard() {
             if (isNaN(switchId) || !s.hasOwnProperty('state')) return;
 
             const switchIndex = updatedSwitches.findIndex(sw => sw.id === switchId);
-            // The database stores the relay state for NC relays: false is ON, true is OFF.
-            // The UI state should be the inverse: true is ON, false is OFF.
             const newUiState = !s.state; 
 
             if (switchIndex !== -1 && updatedSwitches[switchIndex].state !== newUiState) {
               updatedSwitches[switchIndex] = { ...updatedSwitches[switchIndex], name: s.name, state: newUiState };
               hasChanged = true;
             } else if (switchIndex === -1) {
-              // This can handle cases where a switch is added to the DB dynamically
               updatedSwitches.push({ id: switchId, name: s.name || `Switch ${switchId}`, state: newUiState });
               hasChanged = true;
             }
           });
           
           if(hasChanged) {
-            // Sort to maintain consistent order
             updatedSwitches.sort((a, b) => a.id - b.id);
             return updatedSwitches;
           }
@@ -226,11 +196,9 @@ export function Dashboard() {
     const targetSwitch = switches.find(s => s.id === id);
     if (!targetSwitch) return;
 
-    // Optimistic UI update
     setSwitches(prev => prev.map(s => s.id === id ? { ...s, state: checked } : s));
     setAiReasoning('');
 
-    // `checked` is the UI state (true for ON). The action will invert it for the DB.
     const result = await updateSwitchState(id, targetSwitch.name, checked);
     if (!result.success) {
       toast({
@@ -238,7 +206,6 @@ export function Dashboard() {
         title: 'Update Failed',
         description: result.error,
       });
-      // Revert UI on failure
       setSwitches(prev => prev.map(s => s.id === id ? { ...s, state: !checked } : s));
     }
   }
@@ -255,7 +222,7 @@ export function Dashboard() {
           isPredictionAvailable={!!prediction}
           onSwitchChange={handleSwitchChange}
           onPreferencesChange={setUserPreferences}
-          onOptimize={() => handleOptimization(false)}
+          onOptimize={() => handleOptimization(energyData, false)}
         />
       </div>
 

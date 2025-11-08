@@ -169,7 +169,7 @@ export async function simulateBatteryLevel(level: number) {
     
     const dataToPost = {
       batteryLevel: level,
-      timestamp: { ".sv": "timestamp" }, // Firebase Server Value for timestamp
+      timestamp: serverTimestamp(), // Firebase Server Value for timestamp
       // Include other fields with default values so the dashboard doesn't crash
       voltage: 230,
       current: 0,
