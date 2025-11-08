@@ -4,7 +4,7 @@
 import { intelligentSwitchControl, IntelligentSwitchControlInput } from '../ai/flows/intelligent-switch-control';
 import { predictEnergyConsumption, PredictEnergyConsumptionOutput } from '../ai/flows/predict-energy-consumption';
 import { HOURLY_USAGE_DATA } from '../lib/data';
-import { getDatabase, ref, get, child, set } from 'firebase/database';
+import { getDatabase, ref, get, child, set, serverTimestamp, push } from 'firebase/database';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { firebaseConfig } from '../firebase/config';
 import { randomUUID } from 'crypto';
@@ -157,41 +157,18 @@ export async function getSwitchStates() {
 
 export async function simulateBatteryLevel(level: number) {
   try {
-    const databaseUrl = firebaseConfig.databaseURL;
-    if (!databaseUrl) {
-      throw new Error('databaseURL is not defined in firebaseConfig');
-    }
-    const secret = process.env.FIREBASE_DATABASE_SECRET;
-    if (!secret) {
-      console.error('FIREBASE_DATABASE_SECRET is not set in environment variables.');
-      throw new Error('Server configuration error: Missing database secret.');
-    }
-
-    const path = `app/energyData.json?auth=${secret}`;
-    const url = `${databaseUrl}/${path}`;
-
-    // Create a new entry with the simulated battery level and current timestamp
-    const response = await fetch(url, {
-      method: 'POST', // POST to create a new unique entry
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        batteryLevel: level,
-        timestamp: new Date().toISOString(),
-        // Add other fields with default/null values if needed by the structure
-        voltage: 230,
-        current: 0,
-        power: 0,
-        temperature: 25,
-        humidity: 60,
-      }),
+    const energyDataRef = ref(database, 'app/energyData');
+    const newEntryRef = push(energyDataRef);
+    
+    await set(newEntryRef, {
+      batteryLevel: level,
+      timestamp: serverTimestamp(), // Use server-side timestamp for reliable ordering
+      voltage: 230,
+      current: 0,
+      power: 0,
+      temperature: 25,
+      humidity: 60,
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to simulate battery level.');
-    }
 
     return { success: true };
   } catch (error: any) {

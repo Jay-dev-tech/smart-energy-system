@@ -12,7 +12,7 @@ import { UsageHistory } from './usage-history';
 import { PredictionAnalytics } from './prediction-analytics';
 import type { PredictEnergyConsumptionOutput } from '../../ai/flows/predict-energy-consumption';
 import { useDatabase, useMemoFirebase } from '../../firebase';
-import { onValue, ref } from 'firebase/database';
+import { onValue, ref, query, orderByChild, limitToLast } from 'firebase/database';
 
 export function Dashboard() {
   const [energyData, setEnergyData] = useState<EnergyData>(INITIAL_ENERGY_DATA);
@@ -123,21 +123,42 @@ export function Dashboard() {
     handlePrediction(); // Initial prediction on load
   }, [handlePrediction]);
 
-  const energyDataRef = useMemoFirebase(() => database ? ref(database, 'app/energyData') : null, [database]);
+  // This query now explicitly asks for the single latest entry based on the timestamp.
+  const energyDataQuery = useMemoFirebase(() => database ? query(ref(database, 'app/energyData'), orderByChild('timestamp'), limitToLast(1)) : null, [database]);
   const switchStatesRef = useMemoFirebase(() => database ? ref(database, 'app/switchStates') : null, [database]);
 
   useEffect(() => {
-    if (!energyDataRef) return;
-    const unsubscribe = onValue(energyDataRef, (snapshot) => {
+    if (!energyDataQuery) return;
+    const unsubscribe = onValue(energyDataQuery, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Get the latest entry
-        const latestKey = Object.keys(data).sort().pop();
+        // Get the single latest entry from the query result
+        const latestKey = Object.keys(data)[0];
         if (latestKey) {
             const latestData = data[latestKey];
              setEnergyData(prev => {
                 const newBatteryLevel = latestData.batteryLevel ?? prev.batteryLevel;
-                const newEnergyData = {
+                
+                // --- Automatic low-battery optimization logic ---
+                // This logic needs to run *before* the state update to have access to the *previous* state
+                // to avoid re-triggering.
+                const hasJustDropped = newBatteryLevel < 40 && prev.batteryLevel >= 40;
+
+                if (hasJustDropped && !lowBatteryOptimizationTriggered.current) {
+                    lowBatteryOptimizationTriggered.current = true; // Set flag
+                    // We must pass the new data directly to the optimization function
+                    const currentEnergyData = {
+                        ...prev,
+                        ...latestData,
+                        power: (latestData.voltage && latestData.current) ? latestData.voltage * latestData.current : prev.power,
+                    };
+                    handleOptimization(true);
+                } else if (newBatteryLevel >= 40) {
+                    lowBatteryOptimizationTriggered.current = false; // Reset flag
+                }
+                
+                // Return the new state for the UI
+                return {
                     ...prev, // keep fields not sent by device
                     voltage: latestData.voltage ?? prev.voltage,
                     current: latestData.current ?? prev.current,
@@ -146,22 +167,12 @@ export function Dashboard() {
                     temperature: latestData.temperature ?? prev.temperature,
                     humidity: latestData.humidity ?? prev.humidity,
                 };
-
-                // Automatic low-battery optimization logic
-                if (newBatteryLevel < 40 && !lowBatteryOptimizationTriggered.current) {
-                    lowBatteryOptimizationTriggered.current = true; // Set flag to prevent re-triggering
-                    handleOptimization(true); // isAutomatic = true
-                } else if (newBatteryLevel >= 40) {
-                    lowBatteryOptimizationTriggered.current = false; // Reset flag when battery is healthy
-                }
-                
-                return newEnergyData;
              });
         }
       }
     });
     return () => unsubscribe();
-  }, [energyDataRef, handleOptimization]);
+  }, [energyDataQuery, handleOptimization]);
 
    useEffect(() => {
     if (!switchStatesRef) return;
