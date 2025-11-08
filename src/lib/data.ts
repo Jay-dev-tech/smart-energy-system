@@ -13,10 +13,10 @@ export const INITIAL_ENERGY_DATA: EnergyData = {
 
 export const INITIAL_SWITCHES: SwitchState[] = [
   { id: 1, name: 'Switch 1', state: true },
-  { id: 2, name: 'Switch 2', state: false },
-  { id: 3, name: 'Switch 3', state: false },
+  { id: 2, name: 'Switch 2', state: true },
+  { id: 3, name: 'Switch 3', state: true },
   { id: 4, name: 'Switch 4', state: true },
-  { id: 5, name: 'Switch 5', state: false },
+  { id: 5, name: 'Switch 5', state: true },
 ];
 
 export const HOURLY_USAGE_DATA: HistoricalDataPoint[] = [

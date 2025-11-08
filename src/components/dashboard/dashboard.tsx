@@ -49,10 +49,11 @@ export function Dashboard() {
   }, [toast]);
 
   const updateAllSwitches = useCallback(async (newSwitchDbStates: boolean[]) => {
+    // The AI returns the database state (false=ON, true=OFF).
     // The UI state should be the inverse of the database state.
     const updatedSwitches = switches.map((s, i) => ({
       ...s,
-      // UI state is ON if DB state is false
+      // UI state is ON (true) if DB state is false
       state: !newSwitchDbStates[i], 
     }));
 
@@ -60,6 +61,7 @@ export function Dashboard() {
     setSwitches(updatedSwitches);
 
     // Call server action for each switch. The server action will handle the inversion.
+    // We send the UI state to the action.
     for (const s of updatedSwitches) {
       // no need to await, fire and forget
       updateSwitchState(s.id, s.name, s.state);
@@ -119,27 +121,6 @@ export function Dashboard() {
 
   useEffect(() => {
     handlePrediction(); // Initial prediction on load
-
-    const initialFetch = async () => {
-      const result = await getSwitchStates();
-      if (result.success && result.data) {
-        const dbSwitches = Object.entries(result.data).map(([id, s]: [string, any]) => ({
-          id: parseInt(id, 10),
-          name: s.name,
-          // DB state (false=ON, true=OFF) is inverted for UI state (true=ON, false=OFF)
-          state: !s.state,
-        }));
-        // sync with initial switches
-        const syncedSwitches = INITIAL_SWITCHES.map(is => {
-            const dbSwitch = dbSwitches.find(dbs => dbs.id === is.id);
-            return dbSwitch ? dbSwitch : is;
-        });
-
-        setSwitches(syncedSwitches);
-      }
-    };
-    initialFetch();
-
   }, [handlePrediction]);
 
   const energyDataRef = useMemoFirebase(() => database ? ref(database, 'app/energyData') : null, [database]);
@@ -193,8 +174,8 @@ export function Dashboard() {
           Object.entries(data).forEach(([id, s]: [string, any]) => {
             const switchId = parseInt(id, 10);
             const switchIndex = updatedSwitches.findIndex(sw => sw.id === switchId);
-            // Invert db state for UI. UI ON (true) is DB OFF(true). This is wrong.
-            // UI state should be `!s.state`. If DB is false (ON), UI should be true (ON).
+            // The database stores the relay state for NC relays: false is ON, true is OFF.
+            // The UI state should be the inverse: true is ON, false is OFF.
             const newUiState = !s.state; 
 
             if (switchIndex !== -1 && updatedSwitches[switchIndex].state !== newUiState) {
