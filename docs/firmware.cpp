@@ -95,71 +95,68 @@ int getPinForSwitch(int switchId) {
 void streamCallback(StreamData data) {
   Serial.println("------------------------------------");
   Serial.printf("Stream update received at path: %s\n", data.streamPath().c_str());
-  Serial.printf("Data: %s\n", data.stringData().c_str());
-  Serial.printf("Data type: %s\n", data.dataType().c_str());
-  Serial.println("------------------------------------");
 
+  FirebaseJson json;
   String dataPath = data.dataPath();
 
-  // Handle updates for a single switch's state (e.g., from a PUT)
-  // This is the primary logic for switch toggling.
-  if (dataPath.endsWith("/state")) {
+  // This handles the initial load where the entire object is sent
+  if (data.dataTypeEnum() == fb_esp_data_type_json && dataPath == "/") {
+    Serial.println("Received initial JSON object for all switches.");
+    json.setJsonData(data.stringData());
+    
+    FirebaseJson::IteratorValue value;
+    size_t len = json.iteratorBegin();
+    String key;
+
+    for (size_t i = 0; i < len; i++) {
+      value = json.valueAt(i);
+      key = value.key;
+      int switchId = key.toInt();
+
+      if (switchId > 0) {
+        FirebaseJsonData result;
+        json.get(result, key + "/state"); 
+        if (result.success) {
+          bool switchState = result.to<bool>();
+          int pin = getPinForSwitch(switchId);
+          if (pin != -1) {
+            Serial.printf("Initial state for Switch %d: %s. Setting GPIO %d to %s (NC Logic)\n", 
+                          switchId, 
+                          switchState ? "OFF" : "ON", 
+                          pin, 
+                          switchState ? "HIGH" : "LOW");
+            digitalWrite(pin, switchState ? HIGH : LOW);
+          }
+        }
+      }
+    }
+    json.iteratorEnd();
+  } 
+  // This handles updates to a specific switch's state (e.g., from a PUT/PATCH)
+  // The path will be something like "/4/state"
+  else if (dataPath.indexOf("/state") != -1) {
     dataPath.remove(dataPath.lastIndexOf("/state"));
     if (dataPath.startsWith("/")) {
-        dataPath.remove(0, 1); // remove leading '/'
+        dataPath.remove(0, 1);
     }
     int switchId = dataPath.toInt();
     
     if (switchId > 0) {
-      bool switchState = data.dataType() == "boolean" && data.to<bool>();
+      bool switchState = data.to<bool>();
       int pin = getPinForSwitch(switchId);
 
       if (pin != -1) {
         // **LOGIC INVERTED FOR NORMALLY CLOSED RELAYS**
-        // App "ON" (true) -> Relay LOW to turn ON
-        // App "OFF" (false) -> Relay HIGH to turn OFF
-        Serial.printf("Switch %d state from App: %s. Setting GPIO %d to %s (NC Logic)\n", 
+        // App "ON" (true) -> Relay LOW to turn ON. DB state is false.
+        // App "OFF" (false) -> Relay HIGH to turn OFF. DB state is true.
+        Serial.printf("Switch %d state from DB: %s. Setting GPIO %d to %s (NC Logic)\n", 
                       switchId, 
-                      switchState ? "ON" : "OFF", 
+                      switchState ? "true (OFF)" : "false (ON)", 
                       pin, 
-                      switchState ? "LOW" : "HIGH");
-        digitalWrite(pin, switchState ? LOW : HIGH);
+                      switchState ? "HIGH" : "LOW");
+        digitalWrite(pin, switchState ? HIGH : LOW);
       }
     }
-  } 
-  // Handle the initial data load when the stream connects
-  else if (data.dataType() == "json" && data.dataPath() == "/") {
-    Serial.println("Received initial JSON object for all switches.");
-    FirebaseJson* json = data.to<FirebaseJson*>();
-    
-    size_t len = json->iteratorBegin();
-    FirebaseJson::IteratorValue value;
-    String key;
-
-    for (size_t i = 0; i < len; i++) {
-        value = json->valueAt(i);
-        key = value.key;
-        int switchId = key.toInt();
-
-        if (switchId > 0) {
-          FirebaseJsonData result;
-          json->get(result, key + "/state"); 
-          if(result.success) {
-              bool switchState = result.to<bool>();
-              int pin = getPinForSwitch(switchId);
-              if (pin != -1) {
-                Serial.printf("Initial state for Switch %d: %s. Setting GPIO %d to %s (NC Logic)\n", 
-                              switchId, 
-                              switchState ? "ON" : "OFF", 
-                              pin, 
-                              switchState ? "LOW" : "HIGH");
-                digitalWrite(pin, switchState ? LOW : HIGH);
-              }
-          }
-        }
-    }
-    json->iteratorEnd();
-    delete json; // free memory
   }
 }
 
