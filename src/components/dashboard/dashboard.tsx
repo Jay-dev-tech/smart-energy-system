@@ -152,6 +152,14 @@ export function Dashboard() {
                         ...latestData,
                         power: (latestData.voltage && latestData.current) ? latestData.voltage * latestData.current : prev.power,
                     };
+                    // Use a temporary object for the optimization call, as state updates are async
+                    const optimizationInput = {
+                      voltage: currentEnergyData.voltage,
+                      current: currentEnergyData.current,
+                      batteryLevel: newBatteryLevel, // use the direct new value
+                      powerConsumption: currentEnergyData.power,
+                      // ... rest of the properties for handleOptimization
+                    };
                     handleOptimization(true);
                 } else if (newBatteryLevel >= 40) {
                     lowBatteryOptimizationTriggered.current = false; // Reset flag
@@ -184,6 +192,8 @@ export function Dashboard() {
           let hasChanged = false;
           Object.entries(data).forEach(([id, s]: [string, any]) => {
             const switchId = parseInt(id, 10);
+            if (isNaN(switchId) || !s.hasOwnProperty('state')) return;
+
             const switchIndex = updatedSwitches.findIndex(sw => sw.id === switchId);
             // The database stores the relay state for NC relays: false is ON, true is OFF.
             // The UI state should be the inverse: true is ON, false is OFF.
@@ -192,9 +202,20 @@ export function Dashboard() {
             if (switchIndex !== -1 && updatedSwitches[switchIndex].state !== newUiState) {
               updatedSwitches[switchIndex] = { ...updatedSwitches[switchIndex], name: s.name, state: newUiState };
               hasChanged = true;
+            } else if (switchIndex === -1) {
+              // This can handle cases where a switch is added to the DB dynamically
+              updatedSwitches.push({ id: switchId, name: s.name || `Switch ${switchId}`, state: newUiState });
+              hasChanged = true;
             }
           });
-          return hasChanged ? updatedSwitches : prevSwitches;
+          
+          if(hasChanged) {
+            // Sort to maintain consistent order
+            updatedSwitches.sort((a, b) => a.id - b.id);
+            return updatedSwitches;
+          }
+          
+          return prevSwitches;
         });
       }
     });

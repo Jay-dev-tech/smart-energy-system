@@ -136,7 +136,7 @@ export async function updateSwitchState(switchId: number, name: string, state: b
     }
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: any) {.
     console.error(`Error updating switch ${switchId}:`, error);
     return { success: false, error: error.message || `Failed to update switch ${switchId}.` };
   }
@@ -158,13 +158,14 @@ export async function getSwitchStates() {
 export async function simulateBatteryLevel(level: number) {
   try {
     const energyDataRef = ref(database, 'app/energyData');
-    const newEntryRef = push(energyDataRef);
+    const newEntryRef = push(energyDataRef); // Create a new entry with a unique key
     
+    // Set the data for the new entry, including a server-side timestamp
     await set(newEntryRef, {
       batteryLevel: level,
-      timestamp: serverTimestamp(), // Use server-side timestamp for reliable ordering
+      timestamp: serverTimestamp(),
       voltage: 230,
-      current: 0,
+      current: 0, // Default values for simulation
       power: 0,
       temperature: 25,
       humidity: 60,
